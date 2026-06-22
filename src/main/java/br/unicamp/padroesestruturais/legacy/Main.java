@@ -1,5 +1,13 @@
 package br.unicamp.padroesestruturais.legacy;
 
+import br.unicamp.padroesestruturais.legacy.decorator.DescontoFidelidadeDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.JurosParcelamentoDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.SeguroTransacaoDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.TaxaAntecipacaoRecebiveisDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.TaxaEmissaoNotaFiscalDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.TaxaInternacionalDecorator;
+import br.unicamp.padroesestruturais.legacy.decorator.ValorBase;
+import br.unicamp.padroesestruturais.legacy.decorator.ValorCobranca;
 import br.unicamp.padroesestruturais.legacy.domain.FormaPagamento;
 import br.unicamp.padroesestruturais.legacy.domain.Pedido;
 import br.unicamp.padroesestruturais.legacy.domain.ResultadoCobranca;
@@ -34,6 +42,7 @@ public class Main {
                 case 0 -> executando = false;
                 default -> System.out.println("Opcao invalida. Tente novamente.");
             }
+
             System.out.println();
         }
 
@@ -52,18 +61,19 @@ public class Main {
 
     private static void fluxoCobrancaUnica(Scanner scanner, List<Pedido> pedidos, CobrancaService service) {
         Pedido pedido = selecionarPedido(scanner, pedidos);
-        if (pedido == null) return;
+        if (pedido == null) {
+            return;
+        }
 
         FormaPagamento forma = selecionarFormaPagamento(scanner);
-        if (forma == null) return;
+        if (forma == null) {
+            return;
+        }
 
-        boolean descontoFidelidade = perguntarSimNao(scanner, "Aplicar desconto de fidelidade (5%)?");
-        boolean jurosParcelamento = perguntarSimNao(scanner, "Aplicar juros de parcelamento (2,99%)?");
-        boolean taxaInternacional = perguntarSimNao(scanner, "Aplicar taxa de operacao internacional (5%)?");
-        boolean seguro = perguntarSimNao(scanner, "Aplicar seguro de transacao (R$ 4,90)?");
+        AjustesCobranca ajustes = selecionarAjustesCobranca(scanner);
+        ValorCobranca valorCobranca = montarValorCobranca(pedido.getValorBase(), ajustes);
 
-        ResultadoCobranca resultado = service.cobrar(pedido, forma,
-                descontoFidelidade, jurosParcelamento, taxaInternacional, seguro);
+        ResultadoCobranca resultado = service.cobrar(pedido, forma, valorCobranca);
 
         System.out.println();
         exibirResultado(pedido, resultado);
@@ -71,15 +81,18 @@ public class Main {
 
     private static void fluxoCobrancaEmLote(Scanner scanner, List<Pedido> pedidos, CobrancaService service) {
         FormaPagamento forma = selecionarFormaPagamento(scanner);
-        if (forma == null) return;
+        if (forma == null) {
+            return;
+        }
 
-        boolean descontoFidelidade = perguntarSimNao(scanner, "Aplicar desconto de fidelidade (5%)?");
-        boolean jurosParcelamento = perguntarSimNao(scanner, "Aplicar juros de parcelamento (2,99%)?");
-        boolean taxaInternacional = perguntarSimNao(scanner, "Aplicar taxa de operacao internacional (5%)?");
-        boolean seguro = perguntarSimNao(scanner, "Aplicar seguro de transacao (R$ 4,90)?");
+        AjustesCobranca ajustes = selecionarAjustesCobranca(scanner);
+        List<ValorCobranca> valoresCobranca = new ArrayList<>();
 
-        List<ResultadoCobranca> resultados = service.cobrarEmLote(pedidos, forma,
-                descontoFidelidade, jurosParcelamento, taxaInternacional, seguro);
+        for (Pedido pedido : pedidos) {
+            valoresCobranca.add(montarValorCobranca(pedido.getValorBase(), ajustes));
+        }
+
+        List<ResultadoCobranca> resultados = service.cobrarEmLote(pedidos, forma, valoresCobranca);
 
         System.out.println();
         for (int i = 0; i < pedidos.size(); i++) {
@@ -88,13 +101,69 @@ public class Main {
         }
     }
 
+    private static AjustesCobranca selecionarAjustesCobranca(Scanner scanner) {
+        boolean descontoFidelidade = perguntarSimNao(scanner, "Aplicar desconto de fidelidade (5%)?");
+        boolean jurosParcelamento = perguntarSimNao(scanner, "Aplicar juros de parcelamento (2,99%)?");
+        boolean taxaInternacional = perguntarSimNao(scanner, "Aplicar taxa de operacao internacional (5%)?");
+        boolean seguro = perguntarSimNao(scanner, "Aplicar seguro de transacao (R$ 4,90)?");
+        boolean taxaAntecipacaoRecebiveis = perguntarSimNao(scanner, "Aplicar taxa de antecipacao de recebiveis (1,5%)?");
+        boolean taxaEmissaoNotaFiscal = perguntarSimNao(scanner, "Aplicar taxa de emissao de nota fiscal (R$ 2,50)?");
+
+        return new AjustesCobranca(
+                descontoFidelidade,
+                jurosParcelamento,
+                taxaInternacional,
+                seguro,
+                taxaAntecipacaoRecebiveis,
+                taxaEmissaoNotaFiscal
+        );
+    }
+
+    private static ValorCobranca montarValorCobranca(double valorBase, AjustesCobranca ajustes) {
+        ValorCobranca valorCobranca = new ValorBase(valorBase);
+
+        if (ajustes.descontoFidelidade()) {
+            valorCobranca = new DescontoFidelidadeDecorator(valorCobranca);
+        }
+
+        if (ajustes.jurosParcelamento()) {
+            valorCobranca = new JurosParcelamentoDecorator(valorCobranca);
+        }
+
+        if (ajustes.taxaInternacional()) {
+            valorCobranca = new TaxaInternacionalDecorator(valorCobranca);
+        }
+
+        if (ajustes.seguro()) {
+            valorCobranca = new SeguroTransacaoDecorator(valorCobranca);
+        }
+
+        if (ajustes.taxaAntecipacaoRecebiveis()) {
+            valorCobranca = new TaxaAntecipacaoRecebiveisDecorator(valorCobranca);
+        }
+
+        if (ajustes.taxaEmissaoNotaFiscal()) {
+            valorCobranca = new TaxaEmissaoNotaFiscalDecorator(valorCobranca);
+        }
+
+        return valorCobranca;
+    }
+
     private static void exibirPedidos(List<Pedido> pedidos) {
         System.out.println("=== Pedidos Cadastrados ===");
+
         for (int i = 0; i < pedidos.size(); i++) {
             Pedido pedido = pedidos.get(i);
-            System.out.printf("%d. [%s] %s - %s - R$ %.2f%n",
-                    i + 1, pedido.getId(), pedido.getDescricao(), pedido.getCliente(), pedido.getValorBase());
+            System.out.printf(
+                    "%d. [%s] %s - %s - R$ %.2f%n",
+                    i + 1,
+                    pedido.getId(),
+                    pedido.getDescricao(),
+                    pedido.getCliente(),
+                    pedido.getValorBase()
+            );
         }
+
         System.out.println("===========================");
     }
 
@@ -113,12 +182,14 @@ public class Main {
     private static Pedido selecionarPedido(Scanner scanner, List<Pedido> pedidos) {
         exibirPedidos(pedidos);
         System.out.print("Escolha o pedido pelo numero: ");
+
         int escolha = lerInteiro(scanner);
 
         if (escolha < 1 || escolha > pedidos.size()) {
             System.out.println("Pedido invalido.");
             return null;
         }
+
         return pedidos.get(escolha - 1);
     }
 
@@ -156,9 +227,21 @@ public class Main {
 
     private static List<Pedido> criarPedidosExemplo() {
         List<Pedido> pedidos = new ArrayList<>();
+
         pedidos.add(new Pedido("PED-001", "Joao Silva", "Notebook Dell XPS 15", 4500.00));
         pedidos.add(new Pedido("PED-002", "Maria Santos", "Cadeira de Escritorio Ergonomica", 890.00));
         pedidos.add(new Pedido("PED-003", "Construtora ABC Ltda", "Servidor Dell PowerEdge R740", 18500.00));
+
         return pedidos;
+    }
+
+    private record AjustesCobranca(
+            boolean descontoFidelidade,
+            boolean jurosParcelamento,
+            boolean taxaInternacional,
+            boolean seguro,
+            boolean taxaAntecipacaoRecebiveis,
+            boolean taxaEmissaoNotaFiscal
+    ) {
     }
 }
