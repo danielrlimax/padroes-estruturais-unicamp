@@ -1,100 +1,63 @@
-package br.unicamp.padroesestruturais.legacy.service;
+package br.unicamp.padroesestruturais.legacy.service; 
 
-import br.unicamp.padroesestruturais.legacy.decorator.ValorCobranca;
-import br.unicamp.padroesestruturais.legacy.domain.FormaPagamento;
-import br.unicamp.padroesestruturais.legacy.domain.Pedido;
-import br.unicamp.padroesestruturais.legacy.domain.ResultadoCobranca;
-import br.unicamp.padroesestruturais.legacy.externo.GatewayIndisponivelException;
-import br.unicamp.padroesestruturais.legacy.externo.PaySecureGateway;
-import br.unicamp.padroesestruturais.legacy.externo.TransacaoExterna;
-import br.unicamp.padroesestruturais.legacy.gateway.GatewayPagamentoInterno;
+import br.unicamp.padroesestruturais.legacy.domain.FormaPagamento; 
+import br.unicamp.padroesestruturais.legacy.domain.Pedido; 
+import br.unicamp.padroesestruturais.legacy.domain.ResultadoCobranca; 
+import br.unicamp.padroesestruturais.legacy.gateway.GatewayFactory; 
+import br.unicamp.padroesestruturais.legacy.gateway.GatewayPagamento; 
+import java.util.ArrayList; 
+import java.util.List;  
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
+public class CobrancaService {      
+    private static final double TAXA_DESCONTO_FIDELIDADE = 0.05;     
+    private static final double TAXA_JUROS_PARCELAMENTO = 0.0299;     
+    private static final double TAXA_OPERACAO_INTERNACIONAL = 0.05;     
+    private static final double VALOR_SEGURO = 4.90;      
+    
+    public ResultadoCobranca cobrar(Pedido pedido, FormaPagamento forma,                                      
+        boolean aplicarDescontoFidelidade,                                      
+        boolean aplicarJurosParcelamento,                                     
+        boolean aplicarTaxaInternacional,                                      
+        boolean aplicarSeguro) {          
+        double valorFinal = calcularValorFinal(pedido.getValorBase(), aplicarDescontoFidelidade,                 
+        aplicarJurosParcelamento, aplicarTaxaInternacional, aplicarSeguro);          
+        GatewayPagamento gateway = GatewayFactory.obterGateway(forma);         
+        return gateway.processarCobranca(pedido, valorFinal, forma);     
+    }      
 
-public class CobrancaService {
-
-    public ResultadoCobranca cobrar(Pedido pedido, FormaPagamento forma, ValorCobranca valorCobranca) {
-        validarDadosCobranca(pedido, forma, valorCobranca);
-
-        double valorFinal = calcularValorFinal(valorCobranca);
-
-        if (forma == FormaPagamento.BOLETO || forma == FormaPagamento.PIX) {
-            GatewayPagamentoInterno gateway = new GatewayPagamentoInterno();
-            return gateway.cobrar(pedido.getId(), pedido.getCliente(), valorFinal, forma);
-        }
-
-        if (forma == FormaPagamento.CARTAO_CREDITO) {
-            return cobrarComCartaoCredito(pedido, forma, valorFinal);
-        }
-
-        throw new IllegalArgumentException("Forma de pagamento nao suportada: " + forma);
-    }
-
-    public List<ResultadoCobranca> cobrarEmLote(
-            List<Pedido> pedidos,
-            FormaPagamento forma,
-            List<ValorCobranca> valoresCobranca
-    ) {
-        Objects.requireNonNull(pedidos, "A lista de pedidos nao pode ser nula.");
-        Objects.requireNonNull(valoresCobranca, "A lista de valores de cobranca nao pode ser nula.");
-
-        if (pedidos.size() != valoresCobranca.size()) {
-            throw new IllegalArgumentException("Cada pedido deve possuir um valor de cobranca correspondente.");
-        }
-
-        List<ResultadoCobranca> resultados = new ArrayList<>();
-
-        for (int i = 0; i < pedidos.size(); i++) {
-            resultados.add(cobrar(pedidos.get(i), forma, valoresCobranca.get(i)));
-        }
-
-        return resultados;
-    }
-
-    public double calcularValorFinal(ValorCobranca valorCobranca) {
-        Objects.requireNonNull(valorCobranca, "O valor de cobranca nao pode ser nulo.");
-        return valorCobranca.calcular();
-    }
-
-    private void validarDadosCobranca(Pedido pedido, FormaPagamento forma, ValorCobranca valorCobranca) {
-        Objects.requireNonNull(pedido, "O pedido nao pode ser nulo.");
-        Objects.requireNonNull(forma, "A forma de pagamento nao pode ser nula.");
-        Objects.requireNonNull(valorCobranca, "O valor de cobranca nao pode ser nulo.");
-    }
-
-    private ResultadoCobranca cobrarComCartaoCredito(Pedido pedido, FormaPagamento forma, double valorFinal) {
-        PaySecureGateway gateway = new PaySecureGateway();
-
-        Map<String, Object> dadosTransacao = new HashMap<>();
-        dadosTransacao.put("orderId", pedido.getId());
-        dadosTransacao.put("customerName", pedido.getCliente());
-        dadosTransacao.put("amount", valorFinal);
-        dadosTransacao.put("currency", "BRL");
-
-        try {
-            TransacaoExterna transacao = gateway.processarTransacao(dadosTransacao);
-            String status = transacao.getCodigoStatus() == 200 ? "APROVADA" : "RECUSADA";
-
-            return new ResultadoCobranca(
-                    pedido.getId(),
-                    valorFinal,
-                    status,
-                    transacao.getReferenciaExterna(),
-                    forma
-            );
-
-        } catch (GatewayIndisponivelException e) {
-            return new ResultadoCobranca(
-                    pedido.getId(),
-                    valorFinal,
-                    "RECUSADA",
-                    null,
-                    forma
-            );
-        }
-    }
-}
+    public List<ResultadoCobranca> cobrarEmLote(List<Pedido> pedidos, FormaPagamento forma,                                                   
+        boolean aplicarDescontoFidelidade,                                                  
+        boolean aplicarJurosParcelamento,                                                   
+        boolean aplicarTaxaInternacional,                                                   
+        boolean aplicarSeguro) {          
+        List<ResultadoCobranca> resultados = new ArrayList<>();         
+        GatewayPagamento gateway = GatewayFactory.obterGateway(forma);         
+        for (Pedido pedido : pedidos) {             
+            double valorFinal = calcularValorFinal(pedido.getValorBase(), aplicarDescontoFidelidade,                     
+            aplicarJurosParcelamento, aplicarTaxaInternacional, aplicarSeguro);             
+            resultados.add(gateway.processarCobranca(pedido, valorFinal, forma));         
+        }         
+        return resultados;     
+    }     
+        
+    public double calcularValorFinal(double valorBase,                                       
+        boolean aplicarDescontoFidelidade,                                       
+        boolean aplicarJurosParcelamento,                                       
+        boolean aplicarTaxaInternacional,                                       
+        boolean aplicarSeguro) {         
+        double valor = valorBase;          
+        if (aplicarDescontoFidelidade) {             
+            valor = valor - (valor * TAXA_DESCONTO_FIDELIDADE);         
+        }         
+        if (aplicarJurosParcelamento) {             
+            valor = valor + (valor * TAXA_JUROS_PARCELAMENTO);         
+        }         
+        if (aplicarTaxaInternacional) {             
+            valor = valor + (valor * TAXA_OPERACAO_INTERNACIONAL);         
+        }         
+        if (aplicarSeguro) {             
+           valor = valor + VALOR_SEGURO;         
+        }          
+        return valor;     
+    } 
+} 
