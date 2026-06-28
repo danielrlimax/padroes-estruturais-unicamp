@@ -25,6 +25,10 @@ public class CobrancaService {
         List<ResultadoCobranca> resultados = new ArrayList<>();
         GatewayPagamento gateway = GatewayFactory.obterGateway(forma);
 
+        if (pedidos.size() != valoresCobranca.size()) {
+            throw new IllegalArgumentException("Lista de pedidos e valores têm tamanhos diferentes");
+        }
+
         for (int i = 0; i < pedidos.size(); i++) {
             Pedido pedido = pedidos.get(i);
             ValorCobranca valor = valoresCobranca.get(i);
@@ -32,24 +36,8 @@ public class CobrancaService {
         }
         return resultados;
     }
-    public double calcularValorFinal(double valorBase,                                       
-        boolean aplicarDescontoFidelidade,                                       
-        boolean aplicarJurosParcelamento,                                       
-        boolean aplicarTaxaInternacional,                                       
-        boolean aplicarSeguro) {         
-        double valor = valorBase;          
-        if (aplicarDescontoFidelidade) {             
-            valor = valor - (valor * TAXA_DESCONTO_FIDELIDADE);         
-        }         
-        if (aplicarJurosParcelamento) {             
-            valor = valor + (valor * TAXA_JUROS_PARCELAMENTO);         
-        }         
-        if (aplicarTaxaInternacional) {             
-            valor = valor + (valor * TAXA_OPERACAO_INTERNACIONAL);         
-        }         
-        if (aplicarSeguro) {             
-           valor = valor + VALOR_SEGURO;         
-        }          
-        return valor;     
+    public double calcularValorFinal(ValorCobranca valorCobranca) {
+
+        return valorCobranca.calcular();
     } 
 } 
