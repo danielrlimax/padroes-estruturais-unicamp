@@ -64,6 +64,19 @@ class CobrancaServiceTest {
     }
 
     @Test
+    void deveCobrarViaCarteiraDigitalSemAjustes() {
+        ValorCobranca valorCobranca = new ValorBase(pedido.getValorBase());
+
+        ResultadoCobranca resultado = service.cobrar(pedido, FormaPagamento.CARTEIRA_DIGITAL, valorCobranca);
+
+        assertEquals("APROVADA", resultado.getStatus());
+        assertEquals(1000.0, resultado.getValorCobrado(), 0.001);
+        assertEquals(FormaPagamento.CARTEIRA_DIGITAL, resultado.getFormaPagamento());
+        assertNotNull(resultado.getReferencia());
+        assertTrue(resultado.getReferencia().startsWith("WPAY-"));
+    }
+
+    @Test
     void deveRecusarCartaoCreditoParaValorAcimaDoLimite() {
         Pedido pedidoCaro = new Pedido("PED-003", "Construtora ABC Ltda", "Servidor", 15000.0);
         ValorCobranca valorCobranca = new ValorBase(pedidoCaro.getValorBase());
@@ -71,6 +84,19 @@ class CobrancaServiceTest {
         ResultadoCobranca resultado = service.cobrar(pedidoCaro, FormaPagamento.CARTAO_CREDITO, valorCobranca);
 
         assertEquals("RECUSADA", resultado.getStatus());
+    }
+
+    @Test
+    void deveRecusarCarteiraDigitalParaValorAcimaDoLimite() {
+        Pedido pedidoCaro = new Pedido("PED-004", "Construtora ABC Ltda", "Servidor", 15000.0);
+        ValorCobranca valorCobranca = new ValorBase(pedidoCaro.getValorBase());
+
+        ResultadoCobranca resultado = service.cobrar(pedidoCaro, FormaPagamento.CARTEIRA_DIGITAL, valorCobranca);
+
+        assertEquals("RECUSADA", resultado.getStatus());
+        assertEquals(FormaPagamento.CARTEIRA_DIGITAL, resultado.getFormaPagamento());
+        assertNotNull(resultado.getReferencia());
+        assertTrue(resultado.getReferencia().startsWith("WPAY-"));
     }
 
     @Test
@@ -204,6 +230,39 @@ class CobrancaServiceTest {
         double valor = service.calcularValorFinal(valorCobranca);
 
         assertEquals(esperado, valor, 0.001);
+    }
+
+    @Test
+    void devePermitirComporNovosDecoratorsEmOrdensDiferentes() {
+        ValorCobranca antecipacaoDepoisNotaFiscal = new ValorBase(1000.0);
+        antecipacaoDepoisNotaFiscal = new TaxaEmissaoNotaFiscalDecorator(antecipacaoDepoisNotaFiscal);
+        antecipacaoDepoisNotaFiscal = new TaxaAntecipacaoRecebiveisDecorator(antecipacaoDepoisNotaFiscal);
+
+        ValorCobranca notaFiscalDepoisAntecipacao = new ValorBase(1000.0);
+        notaFiscalDepoisAntecipacao = new TaxaAntecipacaoRecebiveisDecorator(notaFiscalDepoisAntecipacao);
+        notaFiscalDepoisAntecipacao = new TaxaEmissaoNotaFiscalDecorator(notaFiscalDepoisAntecipacao);
+
+        double valorA = service.calcularValorFinal(antecipacaoDepoisNotaFiscal);
+        double valorB = service.calcularValorFinal(notaFiscalDepoisAntecipacao);
+
+        assertEquals(1017.5375, valorA, 0.001);
+        assertEquals(1017.50, valorB, 0.001);
+        assertNotEquals(valorA, valorB);
+    }
+
+    @Test
+    void deveCobrarViaCarteiraDigitalComAjustes() {
+        ValorCobranca valorCobranca = new ValorBase(pedido.getValorBase());
+        valorCobranca = new TaxaAntecipacaoRecebiveisDecorator(valorCobranca);
+        valorCobranca = new TaxaEmissaoNotaFiscalDecorator(valorCobranca);
+
+        ResultadoCobranca resultado = service.cobrar(pedido, FormaPagamento.CARTEIRA_DIGITAL, valorCobranca);
+
+        assertEquals("APROVADA", resultado.getStatus());
+        assertEquals(1017.50, resultado.getValorCobrado(), 0.001);
+        assertEquals(FormaPagamento.CARTEIRA_DIGITAL, resultado.getFormaPagamento());
+        assertNotNull(resultado.getReferencia());
+        assertTrue(resultado.getReferencia().startsWith("WPAY-"));
     }
 
     @Test
